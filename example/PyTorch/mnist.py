@@ -101,28 +101,31 @@ def main():
     # device = torch.device("cuda" if use_cuda else "cpu")
     # kwargs = {'num_workers': 1, 'pin_memory': True} if use_cuda else {}
 
-    rank = int(os.environ['SLURM_PROCID'])
-    local_rank = int(os.environ['SLURM_LOCALID'])
-    world_size = int(os.environ['SLURM_NTASKS'])
-    iplist = os.environ['SLURM_JOB_NODELIST']
-    ip = subprocess.getoutput(f"scontrol show hostname {iplist} | head -n1")
+    rank = int(os.environ["RANK"])
+    local_rank = int(os.environ["LOCAL_RANK"])
+    world_size = int(os.environ["WORLD_SIZE"])
+    master_addr = os.environ["MASTER_ADDR"]
+    master_port = os.environ["MASTER_PORT"]
+    
+    dist_init(master_addr, rank,local_rank, world_size, master_port)
 
-    dist_init(ip, rank, local_rank, world_size)
+
     train_dataset = datasets.MNIST(args.datasetDir, train=True, download=False,
                        transform=transforms.Compose([
                            transforms.ToTensor(),
                            transforms.Normalize((0.1307,), (0.3081,))
                        ]))
+
     train_sampler = DistributedSampler(train_dataset, num_replicas=world_size, rank=rank)
     train_loader = torch.utils.data.DataLoader(
         train_dataset,
         batch_size=args.batch_size,
         sampler=train_sampler
         )
-    test_dataset = datasets.MNIST(args.datasetDir, train=False, transform=transforms.Compose([
+    test_dataset = datasets.MNIST(args.datasetDir, train=False ,transform=transforms.Compose([
                            transforms.ToTensor(),
                            transforms.Normalize((0.1307,), (0.3081,))
-                       ]))
+                       ]), download=False,)
     test_sampler = DistributedSampler(test_dataset, num_replicas=world_size, rank=rank)
 
     test_loader = torch.utils.data.DataLoader(
@@ -130,7 +133,7 @@ def main():
         batch_size=args.test_batch_size,
         sampler=test_sampler
         )
-
+    print("DEBUG, local_rank=",local_rank)
     model = Net().to(local_rank)
     model = DistributedDataParallel(model)
     optimizer = optim.SGD(model.parameters(), lr=args.lr, momentum=args.momentum)
